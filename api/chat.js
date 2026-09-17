@@ -6,7 +6,102 @@ export default async function handler(req, res) {
   }
 
   try {
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = process.env.GROQ_API_KEYimport { createClient } from "@supabase/supabase-js";
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({
+      error: "Method not allowed"
+    });
+  }
+
+  try {
+    const { messages } = req.body;
+
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({
+        error: "Messages are required"
+      });
+    }
+
+    // Get the latest user question
+    const userMessage = [...messages]
+      .reverse()
+      .find((message) => message.role === "user");
+
+    if (!userMessage) {
+      return res.status(400).json({
+        error: "User message not found"
+      });
+    }
+
+    // Groq API
+    const groqResponse = await fetch(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-oss-20b",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are GANSH RAM AI, a helpful and professional AI assistant."
+            },
+            ...messages
+          ],
+          temperature: 0.7
+        })
+      }
+    );
+
+    const groqData = await groqResponse.json();
+
+    if (!groqResponse.ok) {
+      return res.status(groqResponse.status).json({
+        error: groqData?.error?.message || "Groq API error"
+      });
+    }
+
+    const aiResponse =
+      groqData?.choices?.[0]?.message?.content ||
+      "Sorry, I could not generate a response.";
+
+    // Connect to Supabase
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SECRET_KEY
+    );
+
+    // Save chat history
+    const { error: dbError } = await supabase
+      .from("chat_logs")
+      .insert({
+        user_message: userMessage.content,
+        ai_response: aiResponse
+      });
+
+    if (dbError) {
+      console.error("Supabase error:", dbError);
+    }
+
+    // Send response back to chatbot
+    return res.status(200).json({
+      reply: aiResponse
+    });
+
+  } catch (error) {
+    console.error("Server error:", error);
+
+    return res.status(500).json({
+      error: "Something went wrong on the server."
+    });
+  }
+}
 
     if (!apiKey) {
       return res.status(500).json({
